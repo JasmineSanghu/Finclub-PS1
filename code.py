@@ -24,7 +24,7 @@ test = pd.read_csv('test_data.csv')
 train.columns = train.columns.str.strip()
 test.columns = test.columns.str.strip()
 
-# Apply forward-fill imputation to eliminate intermittent data gaps safely
+# Handle missing values via forward fill
 train = train.ffill()
 test = test.ffill()
 
@@ -45,7 +45,7 @@ tenors_map: Dict[str, float] = {
     'ZC200YR': 2.0
 }
 
-# Pre-calculate normalized EWMA weights to assign higher importance to recent innovations
+Pre-compute normalized EWMA weights (weights sum to 1)
 ewma_weights = np.array([decay_beta**(w_size - 1 - t) for t in range(w_size)])
 ewma_weights /= np.sum(ewma_weights)
 
@@ -55,12 +55,13 @@ ewma_weights /= np.sum(ewma_weights)
 
 def cir_yield(r: Union[float, np.ndarray], tau: float, k: float, th: float, sig: float) -> Union[float, np.ndarray]:
     """Computes exact closed-form zero-coupon yields for a single-factor CIR model."""
-    # Enforce non-zero floors to protect against mathematical evaluation crashes
+    
+    # Floor inputs to prevent divide-by-zero or math errors
     k = max(k, 1e-6)
     th = max(th, 1e-6)
     sig = max(sig, 1e-6)
     
-    # Calculate core auxiliary structural coefficient components
+    # CIR analytical components
     h = np.sqrt(k**2 + 2 * sig**2)
     exp_h = np.exp(h * tau)
     den = 2 * h + (k + h) * (exp_h - 1)
