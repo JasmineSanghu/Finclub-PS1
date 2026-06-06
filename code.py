@@ -45,7 +45,7 @@ tenors_map: Dict[str, float] = {
     'ZC200YR': 2.0
 }
 
-Pre-compute normalized EWMA weights (weights sum to 1)
+#Pre-compute normalized EWMA weights (weights sum to 1)
 ewma_weights = np.array([decay_beta**(w_size - 1 - t) for t in range(w_size)])
 ewma_weights /= np.sum(ewma_weights)
 
