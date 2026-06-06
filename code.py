@@ -245,6 +245,6 @@ if violation_rate > 0:
     print("equilibrium restrictions collapse under time-varying historical volatility.")
     print("This explicitly validates why the deterministic error-correction layer (CIR++)")
     print("is mathematically necessary to adapt to actual market shapes.")
-print("==================================================")
+
     
     
