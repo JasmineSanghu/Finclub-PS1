@@ -116,9 +116,12 @@ for i in range(test_start_idx, len(full_data)):
     
     
 
-# PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
-
-
+    k_opt, th_opt, sig_opt = current_params
+    kappa_history.append(k_opt)
+    theta_history.append(th_opt)
+    sigma_history.append(sig_opt)
+    
+    # PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
     # Generate predictions for the current out-of-sample day
     current_row = full_data.iloc[i]
     r_today = current_row['ZC025YR']
@@ -133,11 +136,8 @@ for i in range(test_start_idx, len(full_data)):
         
         # Construct the baseline theoretical CIR model forecast
         base_pred = cir_yield(r_today, tau, k_opt, th_opt, sig_opt)
-        
-        
 
-# PART 4: MODEL IMPROVEMENT & EXTENSIONS
-
+        # PART 4: MODEL IMPROVEMENT & EXTENSIONS
         # Apply error-correction using the saved momentum parameter (0.98 shift)
         cpp_pred = base_pred + (cpp_momentum * last_step_residuals[col])
         
@@ -163,7 +163,7 @@ r2_base_60 = float(r2_score(y_true, y_base))
 r2_cpp_60 = float(r2_score(y_true, y_cpp))
 
 
-print("             FINAL MODEL PERFORMANCE              ")
+print("              FINAL MODEL PERFORMANCE              ")
 
 print(f"Global Baseline CIR Model R2 Score : {r2_base_60:.6f}")
 print(f"Global Advanced CIR++ Model R2 Score: {r2_cpp_60:.6f}")
@@ -227,7 +227,7 @@ violations = np.sum(feller_metric < 0)
 violation_rate = (violations / len(feller_metric)) * 100
 
 
-print("    CRITICAL ANALYSIS: FELLER REGIME SANITY       ")
+print("     CRITICAL ANALYSIS: FELLER REGIME SANITY       ")
 
 print(f"Total Out-of-Sample Tracking Horizons : {len(feller_metric)} Days")
 print(f"Empirical Feller Violations Logged   : {violations} Days ({violation_rate:.2f}%)")
