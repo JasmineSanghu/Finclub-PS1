@@ -108,13 +108,6 @@ for i in range(test_start_idx, len(full_data)):
     res = minimize(objective, current_params, bounds=[(0.001, 2.0), (0.001, 0.20), (0.001, 0.20)], method='L-BFGS-B')
     if res.success:
         current_params = list(res.x)
-        
-    k_opt, th_opt, sig_opt = current_params
-    kappa_history.append(k_opt)
-    theta_history.append(th_opt)
-    sigma_history.append(sig_opt)
-    
-    
 
     k_opt, th_opt, sig_opt = current_params
     kappa_history.append(k_opt)
