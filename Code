@@ -1,0 +1,321 @@
+"""
+
+QUANTITATIVE FIXED INCOME RESEACH: TERM STRUCTURE CALIBRATION PIPELINE
+
+Description:
+    This pipeline implements an end-to-end out-of-sample rolling horizon 
+    calibration engine for the Cox-Ingersoll-Ross (CIR) short-rate process 
+    and its deterministic shift extension (CIR++). 
+
+    The framework optimizes parameters via an Exponentially Weighted Moving 
+    Average (EWMA) cross-sectional objective function and generates dynamic 
+    yield curves, stability metrics, and factor loading diagnostics.
+
+
+REPORT DOCUMENTATION & REPORT REQUIREMENTS
+
+1. STOCHASTIC CALCULUS FOUNDATIONS:
+    The short-rate state variable, r_t, follows a square-root diffusion process:
+        dr_t = kappa * (theta - r_t) * dt + sigma * sqrt(r_t) * dW_t
+    
+    Where 'kappa' is the speed of mean reversion, 'theta' is the long-run variance 
+    mean, 'sigma' is the volatility coefficient, and 'dW_t' is a standard Brownian 
+    motion increment. The zero-coupon bond price P(t, T) possesses an affine term 
+    structure solution:
+        P(t, T) = A(tau) * exp(-B(tau) * r_t)
+    
+    Continuously compounded zero-coupon yields are mapped via:
+        Y(t, T) = -ln(P(t, T)) / tau = (B(tau) * r_t - ln(A(tau))) / tau
+
+2. SYSTEMATIC REGIME SHIFTS & FELLER BREAKDOWNS:
+    The Feller condition (2 * kappa * theta >= sigma^2) guarantees that the short 
+    rate remains strictly positive. During high-volatility market stress regimes, 
+    this condition frequently breaks down empirically as 'sigma' inflates or 
+    'theta' approaches zero. This framework implements strict optimization bounds 
+    and numerical clipping boundaries to preserve mathematical stability under 
+    these extreme pricing environments.
+
+3. MODEL LIMITATIONS:
+    - Single-Factor Compression Constraint: Because the entire curve transitions 
+      under the control of a single state variable (r_t), the model is structurally 
+      constrained to perfect correlation across maturity maturities. It captures 
+      "Level" shifts perfectly but struggles with independent "Slope" or 
+      "Curvature" shifts.
+    - Long-End Decay: As maturity stretches toward long horizons, the short-rate 
+      sensitivity vector decays exponentially, making micro-spreads on long-term 
+      bonds difficult to track without the CIR++ error-correction layer.
+"""
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+# SECTION 1: DATA ENGINEERING, CLEANING, AND PREPROCESSING
+
+print("[INFO] Executing Section 1: Data Engineering and Preprocessing...")
+
+# Load raw historical continuous time-series datasets
+try:
+    train = pd.read_csv('train_data.csv')
+    test = pd.read_csv('test_data.csv')
+except FileNotFoundError:
+    raise FileNotFoundError(
+        "Missing required data files. Please ensure 'train_data.csv' and "
+        "'test_data.csv' are uploaded to your active workspace directory."
+    )
+
+# Clean structural formatting discrepancies and trim whitespace errors from headers
+train.columns = train.columns.str.strip()
+test.columns = test.columns.str.strip()
+
+# Apply forward-fill imputation to eliminate intermittent data gaps safely
+train = train.ffill()
+test = test.ffill()
+
+# Combine data rows chronologically to evaluate continuous rolling lookback windows
+full_data = pd.concat([train, test], axis=0).reset_index(drop=True)
+test_start_idx = len(train)
+
+# Define lookback window architecture and structural asset specifications
+w_size = 60          # 60-day historical calibration lookback window
+decay_beta = 0.94    # Standard RiskMetrics decay factor for volatility tracking
+tenors_map = {
+    'ZC050YR': 0.5, 
+    'ZC075YR': 0.75, 
+    'ZC100YR': 1.0, 
+    'ZC200YR': 2.0
+}
+
+# Pre-calculate normalized EWMA weights to place higher importance on recent innovations
+ewma_weights = np.array([decay_beta**(w_size - 1 - t) for t in range(w_size)])
+ewma_weights /= np.sum(ewma_weights)
+
+print(f"[SUCCESS] Data pipelines established. Train entries: {len(train)} | Test entries: {len(test)}")
+
+
+
+# SECTION 2: ANALYTICAL STRUCTURAL CIR ENGINE
+
+print("[INFO] Executing Section 2: Initializing Pricing Engines...")
+
+def cir_yield(r, tau, k, th, sig):
+    """
+    Computes exact closed-form zero-coupon yields for a single-factor CIR model.
+    Includes optimization safety parameters to maintain numerical consistency.
+    """
+    # Enforce non-zero floors to protect against mathematical evaluation crashes
+    k = max(k, 1e-6)
+    th = max(th, 1e-6)
+    sig = max(sig, 1e-6)
+    
+    # Calculate core auxiliary structural coefficient components
+    h = np.sqrt(k**2 + 2 * sig**2)
+    exp_h = np.exp(h * tau)
+    
+    # Evaluate universal affine denominator segment
+    den = 2 * h + (k + h) * (exp_h - 1)
+    
+    # Calculate analytical affine pricing multipliers A(tau) and B(tau)
+    A_num = 2 * h * np.exp((k + h) * tau / 2)
+    A = (A_num / den)**(2 * k * th / sig**2)
+    B = 2 * (exp_h - 1) / den
+    
+    # Project yield while shielding from log-of-zero mathematical errors
+    return (B * r - np.log(np.maximum(A, 1e-12))) / tau
+
+print("[SUCCESS] Closed-form analytical mathematical engines initialized.")
+
+
+
+# SECTION 3: OUT-OF-SAMPLE ROLLING HORIZON CALIBRATION LOOP
+
+print("[INFO] Executing Section 3: Launching Rolling Out-of-Sample Calibration...")
+
+all_actuals = []
+all_base_preds = []
+kappa_history = []
+theta_history = []
+sigma_history = []
+
+# Initial optimization guess coordinates [kappa, theta, sigma]
+current_params = [0.15, 0.03, 0.05]
+
+for i in range(test_start_idx, len(full_data)):
+    # Slice the historical calibration window to eliminate future-data leakage
+    window = full_data.iloc[i - w_size:i]
+    r_short_hist = window['ZC025YR'].values
+    
+    # Define objective loss function tracking weighted residual squared error
+    def objective(p):
+        k, th, sig = p
+        if k <= 0 or th <= 0 or sig <= 0: 
+            return 1e10
+        err = 0
+        for col, tau in tenors_map.items():
+            preds = cir_yield(r_short_hist, tau, k, th, sig)
+            err += np.sum(ewma_weights * ((window[col].values - preds)**2))
+        return err
+
+    # Minimize cross-sectional residuals using bounded L-BFGS-B method
+    res = minimize(
+        objective, current_params, 
+        bounds=[(0.001, 2.0), (0.001, 0.20), (0.001, 0.20)], 
+        method='L-BFGS-B'
+    )
+    
+    if res.success:
+        current_params = res.x
+        
+    k_opt, th_opt, sig_opt = current_params
+    kappa_history.append(k_opt)
+    theta_history.append(th_opt)
+    sigma_history.append(sig_opt)
+    
+    # Construct predictive mapping structure for the active trading day
+    current_row = full_data.iloc[i]
+    r_today = current_row['ZC025YR']
+    
+    day_actuals = []
+    day_base_preds = []
+    for col, tau in tenors_map.items():
+        day_actuals.append(current_row[col])
+        day_base_preds.append(cir_yield(r_today, tau, k_opt, th_opt, sig_opt))
+        
+    all_actuals.append(day_actuals)
+    all_base_preds.append(day_base_preds)
+
+y_true = np.array(all_actuals).flatten()
+y_base = np.array(all_base_preds).flatten()
+r2_base_60 = r2_score(y_true, y_base)
+
+print(f"[SUCCESS] Baseline CIR process completed. Out-of-Sample R2 Score: {r2_base_60:.6f}")
+
+
+
+# SECTION 4: DETERMINISTIC DRIFT EXTENSION ENGINE (CIR++)
+
+print("[INFO] Executing Section 4: Applying Autoregressive Shift Extensions...")
+
+all_cpp_preds = []
+last_step_residuals = {col: 0.0 for col in tenors_map.keys()}
+
+for i in range(test_start_idx, len(full_data)):
+    current_row = full_data.iloc[i]
+    r_today = current_row['ZC025YR']
+    
+    # Recover exact optimized parameters extracted for this historical index
+    k_opt = kappa_history[i - test_start_idx]
+    th_opt = theta_history[i - test_start_idx]
+    sig_opt = sigma_history[i - test_start_idx]
+    
+    day_cpp_preds = []
+    new_residuals = {}
+    
+    for col, tau in tenors_map.items():
+        actual_yield = current_row[col]
+        base_pred = cir_yield(r_today, tau, k_opt, th_opt, sig_opt)
+        
+        # Apply additive error correction filter to handle structural tracking lag
+        cpp_pred = base_pred + (0.98 * last_step_residuals[col])
+        day_cpp_preds.append(cpp_pred)
+        
+        # Log empirical error residual to shift forward into the next step
+        new_residuals[col] = actual_yield - base_pred
+        
+    all_cpp_preds.append(day_cpp_preds)
+    last_step_residuals = new_residuals
+
+y_cpp = np.array(all_cpp_preds).flatten()
+r2_cpp_60 = r2_score(y_true, y_cpp)
+
+
+print("                       EMPIRICAL CALIBRATION METRICS                      ")
+print(f" Baseline Out-of-Sample CIR Model R2 Score : {r2_base_60:.6f}")
+print(f" Advanced Out-of-Sample CIR++ Model R2 Score: {r2_cpp_60:.6f}")
+
+
+
+
+# SECTION 5: MODEL DIAGNOSTICS & VISUALIZATION GENERATION
+
+print("[INFO] Executing Section 5: Generating Diagnostic Visualization Suite...")
+sns.set_theme(style="whitegrid")
+
+# ---- PLOT 1: CROSS SECTIONAL YIELD CURVE FIT & ERROR RESIDUAL DENSITIES ----
+fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+last_actual = all_actuals[-1]
+last_base = all_base_preds[-1]
+last_cpp = all_cpp_preds[-1]
+tenor_years = list(tenors_map.values())
+
+# Subplot A: Term Structure Yield Realization Comparison
+axes[0].plot(tenor_years, last_actual, 'ko-', label='Market Actuals', linewidth=2.5)
+axes[0].plot(tenor_years, last_base, 'r--', label=f'Baseline CIR (R2: {r2_base_60:.4f})', alpha=0.9)
+axes[0].plot(tenor_years, last_cpp, 'b-.', label=f'CIR++ Model (R2: {r2_cpp_60:.4f})', alpha=0.9)
+axes[0].set_title("Final Test Day: Yield Curve Fit", fontsize=12, fontweight='bold')
+axes[0].set_xlabel("Maturity Tenor (Years)")
+axes[0].set_ylabel("Yield (%)")
+axes[0].legend(frameon=True, loc='best')
+
+# Subplot B: Residual Error Probability Density Distribution Curves
+base_residuals = y_true - y_base
+cpp_residuals = y_true - y_cpp
+sns.kdeplot(base_residuals, ax=axes[1], color='red', fill=True, label='Baseline Residuals', alpha=0.3)
+sns.kdeplot(cpp_residuals, ax=axes[1], color='blue', fill=True, label='CIR++ Residuals', alpha=0.3)
+axes[1].axvline(0, color='black', linestyle=':', alpha=0.7)
+axes[1].set_title("Error Density Profile (60-day EWMA)", fontsize=12, fontweight='bold')
+axes[1].set_xlabel("Prediction Error (Actual - Predicted)")
+axes[1].set_ylabel("Density")
+axes[1].legend(frameon=True)
+
+plt.tight_layout()
+plt.savefig("robust_60day_performance.png", dpi=300)
+plt.show()
+
+# ---- PLOT 2: STRUCTURAL PARAMETER PATH VARIATIONS OVER TIME ----
+fig, ax1 = plt.subplots(figsize=(10, 5))
+ax2 = ax1.twinx()
+ax1.plot(kappa_history, 'g-', label=r'Speed of Mean Reversion ($\kappa$)', linewidth=1.8)
+ax2.plot(theta_history, 'b-', label=r'Long-Run Mean ($\theta$)', linewidth=1.8)
+ax1.set_xlabel('Out-of-Sample Test Steps (Daily Horizon Updates)')
+ax1.set_ylabel(r'$\kappa$ Structural Value', color='g', fontweight='bold')
+ax2.set_ylabel(r'$\theta$ Structural Value', color='b', fontweight='bold')
+plt.title("CIR Parameter Trajectories (kappa & theta)", fontsize=12, fontweight='bold')
+ax1.grid(True, linestyle=':', alpha=0.6)
+
+plt.tight_layout()
+plt.savefig("parameter_stability.png", dpi=300)
+plt.show()
+
+# ---- PLOT 3: THEORETICAL LONG RUN FACTOR DECAY PROJECTIONS ----
+# Trace sensitivity decay vectors smoothly across a long continuous horizon 
+extended_tenors = np.linspace(0.25, 30.0, 200)
+h_lim = np.sqrt(k_opt**2 + 2 * sig_opt**2)
+exp_h_lim = np.exp(h_lim * extended_tenors)
+den_lim = 2 * h_lim + (k_opt + h_lim) * (exp_h_lim - 1)
+factor_loading = (2 * (exp_h_lim - 1) / den_lim) / extended_tenors
+
+plt.figure(figsize=(10, 5))
+plt.plot(extended_tenors, factor_loading, color='crimson', linewidth=2.5, 
+         label=r'Short-Rate Sensitivity Vector: $\frac{B(\tau)}{\tau}$')
+plt.title("CIR Factor Loadings across Tenors", fontsize=12, fontweight='bold')
+plt.xlabel(r"Maturity Tenor $\tau$ (Years)", fontsize=11)
+plt.ylabel(r"Yield Sensitivity to Short-Rate Shocks ($\Delta r_t$)", fontsize=11)
+plt.axvline(2.0, color='black', linestyle=':', label='Project Target Boundary (2Y)')
+
+# Add contextual callouts noting the limitations of single-factor models over long maturities
+plt.text(2.5, 0.8, 'Single factor dominates\n(High tracking range)', color='black', fontsize=10)
+plt.text(18.0, 0.4, 'Factor sensitivity decays\n(Cannot capture slope/curvature)', color='crimson', fontsize=10)
+
+plt.xlim(0, 30)
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.legend(frameon=True, facecolor='white', loc='upper right')
+plt.tight_layout()
+plt.savefig("cir_structural_breakdown.png", dpi=300)
+plt.show()
+
+print("[SUCCESS] Production graphics generated and saved to current directory workspace.")
