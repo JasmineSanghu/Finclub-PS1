@@ -1,7 +1,7 @@
 """
-================================================================================
+
 QUANTITATIVE FIXED INCOME: END-TO-END CIR / CIR++ CALIBRATION PIPELINE
-================================================================================
+
 """
 
 import os
@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-# ==============================================================================
+
 # PART 1: DATA ENGINEERING AND PREPROCESSING
-# ==============================================================================
+
 # Objective: Load historical interest rate datasets, execute sanitization, 
 # and establish lookback structures along with EWMA volatility weighting.
 
@@ -54,9 +54,9 @@ ewma_weights = np.array([decay_beta**(w_size - 1 - t) for t in range(w_size)])
 ewma_weights /= np.sum(ewma_weights)
 
 
-# ==============================================================================
+
 # PART 2: BASE CIR MODEL IMPLEMENTATION & CALIBRATION
-# ==============================================================================
+
 # Objective: Implement the analytical closed-form affine pricing equation for the 
 # Cox-Ingersoll-Ross model and establish the daily cross-sectional optimization.
 
@@ -121,9 +121,9 @@ for i in range(test_start_idx, len(full_data)):
     sigma_history.append(sig_opt)
     
     
-# ==============================================================================
+
 # PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
-# ==============================================================================
+
 # Objective: Isolate daily out-of-sample short-rate vectors and construct 
 # the cross-sectional baseline term structure predictions using optimized parameters.
 
@@ -143,9 +143,9 @@ for i in range(test_start_idx, len(full_data)):
         base_pred = cir_yield(r_today, tau, k_opt, th_opt, sig_opt)
         
         
-# ==============================================================================
+
 # PART 4: MODEL IMPROVEMENT & EXTENSIONS
-# ==============================================================================
+
 # Objective: Implement the deterministic shift extension (CIR++) via an 
 # autoregressive momentum filter, evaluate global metrics, and output diagnostics.
 
@@ -173,12 +173,12 @@ y_cpp = np.array(all_cpp_preds).flatten()
 r2_base_60 = float(r2_score(y_true, y_base))
 r2_cpp_60 = float(r2_score(y_true, y_cpp))
 
-print("\n==================================================")
+
 print("             FINAL MODEL PERFORMANCE              ")
-print("==================================================")
+
 print(f"Global Baseline CIR Model R2 Score : {r2_base_60:.6f}")
 print(f"Global Advanced CIR++ Model R2 Score: {r2_cpp_60:.6f}")
-print("==================================================")
+
 
 # Generate Diagnostic Visualization Suite
 sns.set_theme(style="whitegrid")
@@ -211,16 +211,15 @@ plt.tight_layout()
 plt.show()
 
 
-# ==============================================================================
 # PART 5: CRITICAL ANALYSIS
-# ==============================================================================
+
 # Objective: Run localized code analysis to break down performance by maturity
 # and check empirical violations of the Feller parameter constraint.
 
 # 1. ANALYSIS OF THE SINGLE-FACTOR COMPRESSION CONSTRAINT (Maturity Breakdown)
-print("==================================================")
+
 print("       CRITICAL ANALYSIS: TENOR BREAKDOWN         ")
-print("==================================================")
+
 actuals_df = pd.DataFrame(all_actuals, columns=list(tenors_map.keys()))
 base_df = pd.DataFrame(all_base_preds, columns=list(tenors_map.keys()))
 cpp_df = pd.DataFrame(all_cpp_preds, columns=list(tenors_map.keys()))
@@ -241,9 +240,9 @@ feller_metric = (2 * k_arr * th_arr) - (sig_arr ** 2)
 violations = np.sum(feller_metric < 0)
 violation_rate = (violations / len(feller_metric)) * 100
 
-print("--------------------------------------------------")
+
 print("    CRITICAL ANALYSIS: FELLER REGIME SANITY       ")
-print("==================================================")
+
 print(f"Total Out-of-Sample Tracking Horizons : {len(feller_metric)} Days")
 print(f"Empirical Feller Violations Logged   : {violations} Days ({violation_rate:.2f}%)")
 
