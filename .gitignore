@@ -1,0 +1,12 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local IDE settings
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Large local datasets (optional, if they are proprietary)
+# train_data.csv
+# test_data.csv
