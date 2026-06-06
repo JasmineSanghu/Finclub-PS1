@@ -87,14 +87,14 @@ theta_history = []
 sigma_history = []
 
 last_step_residuals = {col: 0.0 for col in tenors_map.keys()}
-current_params = [0.15, 0.03, 0.05] # Initial parameter guess [kappa, theta, sigma]
+current_params = [0.15, 0.03, 0.05]     # Initial parameter guess [kappa, theta, sigma]
 
-# Begin out-of-sample rolling horizon calibration loop
+# Out-of-sample rolling calibration loop
 for i in range(test_start_idx, len(full_data)):
     window = full_data.iloc[i - w_size:i]
     r_short_hist = window['ZC025YR'].values
     
-    # Optimization Loss Function tracking weighted cross-sectional residual squared error
+    # Loss function: EWMA-weighted SSE across cross-sectional tenors
     def objective(p):
         k, th, sig = p
         if k <= 0 or th <= 0 or sig <= 0: return 1e10
@@ -119,7 +119,7 @@ for i in range(test_start_idx, len(full_data)):
 # PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
 
 
-    # Predict step for the current out-of-sample day
+    # Generate predictions for the current out-of-sample day
     current_row = full_data.iloc[i]
     r_today = current_row['ZC025YR']
     
@@ -154,7 +154,7 @@ for i in range(test_start_idx, len(full_data)):
     
     last_step_residuals = new_residuals
 
-# Flatten arrays simultaneously to guarantee clean vector alignment
+# Flatten arrays for global evaluation metrics
 y_true = np.array(all_actuals).flatten()
 y_base = np.array(all_base_preds).flatten()
 y_cpp = np.array(all_cpp_preds).flatten()
@@ -169,7 +169,7 @@ print(f"Global Baseline CIR Model R2 Score : {r2_base_60:.6f}")
 print(f"Global Advanced CIR++ Model R2 Score: {r2_cpp_60:.6f}")
 
 
-# Generate Diagnostic Visualization Suite
+# Plotting Section
 sns.set_theme(style="whitegrid")
 fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 last_actual = all_actuals[-1]
