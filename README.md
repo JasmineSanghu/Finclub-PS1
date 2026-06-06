@@ -1,5 +1,5 @@
 **Interest Rate Modeling: CIR & CIR++ Calibration**
-This project is a Python tool that predicts and models interest rates. It compares two classic financial models—the Cox-Ingersoll-Ross (CIR) model and its upgraded version, CIR++—to see how accurately they track real-world market changes.
+This project is a Python tool that predicts and models interest rates. It compares two classic financial models: the Cox-Ingersoll-Ross (CIR) model and its upgraded version, CIR++ - to see how accurately they track real-world market changes.
 The tool tests these models against historical data to evaluate their accuracy and automatically applies an error-correction feature to fix prediction mistakes.
 
 **How the Code Works**
