@@ -14,8 +14,7 @@ import seaborn as sns
 
 
 # PART 1: DATA ENGINEERING AND PREPROCESSING
-# Objective: Load historical interest rate datasets, execute sanitization, 
-# and establish lookback structures along with EWMA volatility weighting.
+
 
 print("\n[INFO] Loading and preprocessing datasets...")
 train = pd.read_csv('train_data.csv')
@@ -53,8 +52,6 @@ ewma_weights /= np.sum(ewma_weights)
 
 
 # PART 2: BASE CIR MODEL IMPLEMENTATION & CALIBRATION
-# Objective: Implement the analytical closed-form affine pricing equation for the 
-# Cox-Ingersoll-Ross model and establish the daily cross-sectional optimization.
 
 def cir_yield(r: Union[float, np.ndarray], tau: float, k: float, th: float, sig: float) -> Union[float, np.ndarray]:
     """Computes exact closed-form zero-coupon yields for a single-factor CIR model."""
@@ -119,8 +116,7 @@ for i in range(test_start_idx, len(full_data)):
     
 
 # PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
-# Objective: Isolate daily out-of-sample short-rate vectors and construct 
-# the cross-sectional baseline term structure predictions using optimized parameters.
+
 
     # Predict step for the current out-of-sample day
     current_row = full_data.iloc[i]
@@ -140,8 +136,6 @@ for i in range(test_start_idx, len(full_data)):
         
 
 # PART 4: MODEL IMPROVEMENT & EXTENSIONS
-# Objective: Implement the deterministic shift extension (CIR++) via an 
-# autoregressive momentum filter, evaluate global metrics, and output diagnostics.
 
         # Apply error-correction using the saved momentum parameter (0.98 shift)
         cpp_pred = base_pred + (cpp_momentum * last_step_residuals[col])
@@ -206,8 +200,6 @@ plt.show()
 
 
 # PART 5: CRITICAL ANALYSIS
-# Objective: Run localized code analysis to break down performance by maturity
-# and check empirical violations of the Feller parameter constraint.
 
 # 1. ANALYSIS OF THE SINGLE-FACTOR COMPRESSION CONSTRAINT (Maturity Breakdown)
 
