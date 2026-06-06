@@ -1,7 +1,5 @@
 """
-
 QUANTITATIVE FIXED INCOME: END-TO-END CIR / CIR++ CALIBRATION PIPELINE
-
 """
 
 import os
@@ -16,7 +14,6 @@ import seaborn as sns
 
 
 # PART 1: DATA ENGINEERING AND PREPROCESSING
-
 # Objective: Load historical interest rate datasets, execute sanitization, 
 # and establish lookback structures along with EWMA volatility weighting.
 
@@ -56,7 +53,6 @@ ewma_weights /= np.sum(ewma_weights)
 
 
 # PART 2: BASE CIR MODEL IMPLEMENTATION & CALIBRATION
-
 # Objective: Implement the analytical closed-form affine pricing equation for the 
 # Cox-Ingersoll-Ross model and establish the daily cross-sectional optimization.
 
@@ -123,7 +119,6 @@ for i in range(test_start_idx, len(full_data)):
     
 
 # PART 3: THE PREDICTION CHALLENGE: YIELD CURVE CONSTRUCTION
-
 # Objective: Isolate daily out-of-sample short-rate vectors and construct 
 # the cross-sectional baseline term structure predictions using optimized parameters.
 
@@ -145,7 +140,6 @@ for i in range(test_start_idx, len(full_data)):
         
 
 # PART 4: MODEL IMPROVEMENT & EXTENSIONS
-
 # Objective: Implement the deterministic shift extension (CIR++) via an 
 # autoregressive momentum filter, evaluate global metrics, and output diagnostics.
 
@@ -212,7 +206,6 @@ plt.show()
 
 
 # PART 5: CRITICAL ANALYSIS
-
 # Objective: Run localized code analysis to break down performance by maturity
 # and check empirical violations of the Feller parameter constraint.
 
